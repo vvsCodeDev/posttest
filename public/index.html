@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitter Post Test</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Twitter Post Test</h1>
+        <div class="input-container">
+            <input type="text" id="username" placeholder="Enter Twitter username (e.g., 'twitter')">
+            <button onclick="fetchTweets()" id="fetch-button">Load Tweets</button>
+        </div>
+        <div id="error-container" class="error-container"></div>
+        <div id="rate-limit-timer" class="rate-limit-timer"></div>
+        <div id="user-info" class="user-info"></div>
+        <div id="tweets-container" class="tweets-container">
+            <!-- Tweets will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        let countdownInterval;
+
+        function startCountdown(resetTime) {
+            const timerDiv = document.getElementById('rate-limit-timer');
+            const button = document.getElementById('fetch-button');
+            button.disabled = true;
+
+            countdownInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const resetDate = new Date(resetTime).getTime();
+                const distance = resetDate - now;
+
+                if (distance <= 0) {
+                    clearInterval(countdownInterval);
+                    timerDiv.innerHTML = '';
+                    button.disabled = false;
+                    return;
+                }
+
+                const minutes = Math.floor(distance / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+                timerDiv.innerHTML = `
+                    <div class="countdown">
+                        Rate limit reached. Try again in: ${minutes}m ${seconds}s
+                    </div>
+                `;
+            }, 1000);
+        }
+
+        async function fetchTweets() {
+            const username = document.getElementById('username').value.trim().replace('@', '');
+            const errorContainer = document.getElementById('error-container');
+            const userInfo = document.getElementById('user-info');
+            const tweetsContainer = document.getElementById('tweets-container');
+            const rateLimitTimer = document.getElementById('rate-limit-timer');
+            
+            errorContainer.innerHTML = '';
+            rateLimitTimer.innerHTML = '';
+            userInfo.innerHTML = '';
+            tweetsContainer.innerHTML = '';
+
+            // Clear any existing countdown
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+
+            if (!username) {
+                showError('Please enter a Twitter username');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/tweets/${username}`);
+                console.log('Raw response:', response);
+                const result = await response.json();
+                console.log('Parsed response:', result);
+                
+                if (!response.ok) {
+                    if (response.status === 429 && result.resetTime) {
+                        // Start countdown timer for rate limit
+                        startCountdown(result.resetTime);
+                    }
+                    throw new Error(result.details || result.error || 'Failed to fetch tweets');
+                }
+
+                // Display user info
+                if (result.user) {
+                    console.log('Displaying user info:', result.user);
+                    userInfo.innerHTML = `
+                        <div class="user-header">
+                            <h2>@${result.user.username}</h2>
+                            <p>${result.user.description || ''}</p>
+                        </div>
+                    `;
+                }
+
+                // Display tweets
+                const tweets = result.data || [];
+                console.log('Processing tweets array:', tweets);
+                
+                if (tweets.length > 0) {
+                    console.log('Displaying tweets:', tweets);
+                    tweetsContainer.innerHTML = ''; // Clear container first
+                    tweets.forEach(tweet => {
+                        console.log('Processing tweet:', tweet);
+                        const tweetDate = tweet.created_at ? new Date(tweet.created_at).toLocaleString() : 'Date unavailable';
+                        const tweetElement = document.createElement('div');
+                        tweetElement.className = 'tweet-wrapper';
+                        tweetElement.innerHTML = `
+                            <div class="tweet-text">
+                                ${tweet.text || ''}
+                                <div class="tweet-meta">
+                                    Posted: ${tweetDate}
+                                    <div class="tweet-stats">
+                                        ${tweet.public_metrics ? `
+                                            <span>👁️ ${tweet.public_metrics.impression_count}</span>
+                                            <span>❤️ ${tweet.public_metrics.like_count}</span>
+                                            <span>🔁 ${tweet.public_metrics.retweet_count}</span>
+                                            <span>💬 ${tweet.public_metrics.reply_count}</span>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        tweetsContainer.appendChild(tweetElement);
+                    });
+                } else {
+                    tweetsContainer.innerHTML = '<p class="no-tweets">No tweets found</p>';
+                }
+
+                // Add debug info with more details
+                const debugInfo = document.createElement('div');
+                debugInfo.className = 'debug-info';
+                debugInfo.textContent = `Response status: ${response.status}\nTweets found: ${tweets.length}\nResponse structure: ${JSON.stringify(result, null, 2)}`;
+                tweetsContainer.appendChild(debugInfo);
+            } catch (error) {
+                console.error('Error fetching tweets:', error);
+                showError(error.message);
+            }
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+    </script>
+    <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</body>
+</html> 
